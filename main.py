@@ -9,9 +9,19 @@ from collections import Counter
 try:
     import kociemba
     KOCIEMBA_AVAILABLE = True
+    print("✅ Kociemba solver loaded!")
 except ImportError:
     KOCIEMBA_AVAILABLE = False
-    print("⚠️ Kociemba not available. Run: pip install kociemba")
+    print("⚠️ Kociemba not available. Installing...")
+    import subprocess
+    subprocess.check_call(['pip', 'install', 'kociemba'])
+    try:
+        import kociemba
+        KOCIEMBA_AVAILABLE = True
+        print("✅ Kociemba solver loaded after installation!")
+    except:
+        KOCIEMBA_AVAILABLE = False
+        print("❌ Could not install kociemba. Please install manually: pip install kociemba")
 
 class RubikCubeSolver:
     def __init__(self):
@@ -29,7 +39,7 @@ class RubikCubeSolver:
         
         self.square_size = 400
         
-        # Color ranges
+        # Color ranges (your working detection)
         self.colors = {
             'White': ([0, 0, 200], [180, 30, 255]),
             'Yellow': ([20, 80, 180], [35, 255, 255]),
@@ -56,10 +66,9 @@ class RubikCubeSolver:
         self.face_index = 0
         self.current_colors = [['?' for _ in range(3)] for _ in range(3)]
         
-        # Solution tracking
+        # Store solution
         self.solution_moves = []
-        self.current_move_index = 0
-        self.solving_mode = False
+        self.solution_string = ""
         
         os.makedirs('cube_saves', exist_ok=True)
         
@@ -185,117 +194,19 @@ class RubikCubeSolver:
         
         return frame
     
-    def draw_move_guide(self, frame, move):
-        """Draw visual guide for the current move"""
-        if not move:
-            return frame
-        
-        h, w = frame.shape[:2]
-        
-        # Create overlay for move guide
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (w-250, 10), (w-10, 200), (0, 0, 0), -1)
-        frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
-        
-        # Parse move
-        face = move[0]
-        modifier = move[1] if len(move) > 1 else ''
-        
-        # Get direction arrow
-        if modifier == '2':
-            direction = "180°"
-            arrow = "⟷"
-        elif modifier == "'":
-            direction = "Counter-Clockwise"
-            arrow = "↺"
-        else:
-            direction = "Clockwise"
-            arrow = "↻"
-        
-        # Face names
-        face_names = {
-            'U': 'UP', 'D': 'DOWN', 'F': 'FRONT',
-            'B': 'BACK', 'L': 'LEFT', 'R': 'RIGHT'
-        }
-        
-        # Display move information
-        cv2.putText(frame, "NEXT MOVE:", (w-240, 40),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        
-        # Display the move big
-        move_text = f"{face}{modifier}"
-        cv2.putText(frame, move_text, (w-230, 100),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
-        
-        cv2.putText(frame, f"{face_names.get(face, face)} Face", (w-240, 140),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(frame, f"Turn {direction}", (w-240, 170),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(frame, arrow, (w-240, 195),
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        
-        # Draw arrow on the cube visualization
-        # Show which face to turn with a colored border
-        if face == 'U':
-            cv2.rectangle(frame, (w//2 - self.square_size//2, 0), 
-                         (w//2 + self.square_size//2, self.square_size//3), 
-                         (0, 255, 255), 5)
-        elif face == 'D':
-            cv2.rectangle(frame, (w//2 - self.square_size//2, h - self.square_size//3),
-                         (w//2 + self.square_size//2, h), (0, 255, 255), 5)
-        elif face == 'F':
-            cv2.rectangle(frame, (w//2 - self.square_size//2, h//2 - self.square_size//2),
-                         (w//2 + self.square_size//2, h//2 + self.square_size//2), (0, 255, 255), 5)
-        
-        return frame
-    
-    def draw_progress(self, frame):
-        """Draw solution progress bar"""
-        if not self.solution_moves:
-            return frame
-        
-        total = len(self.solution_moves)
-        current = self.current_move_index
-        
-        progress = int((current / total) * 100) if total > 0 else 0
-        
-        h, w = frame.shape[:2]
-        
-        # Progress bar background
-        bar_width = 300
-        bar_height = 20
-        bar_x = 10
-        bar_y = h - 40
-        
-        cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_width, bar_y + bar_height), 
-                     (100, 100, 100), -1)
-        
-        # Progress fill
-        fill_width = int((current / total) * bar_width) if total > 0 else 0
-        cv2.rectangle(frame, (bar_x, bar_y), (bar_x + fill_width, bar_y + bar_height), 
-                     (0, 255, 0), -1)
-        
-        # Progress text
-        cv2.putText(frame, f"Move {current}/{total} ({progress}%)", 
-                   (bar_x, bar_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
-        # Current and remaining moves
-        if current < total:
-            remaining = total - current
-            cv2.putText(frame, f"Remaining: {remaining} moves", 
-                       (bar_x + bar_width + 10, bar_y + 15), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        
-        return frame
-    
     def build_kociemba_string(self):
         """Build the cube string for Kociemba solver"""
         color_to_kociemba = {
-            'White': 'U', 'Blue': 'R', 'Yellow': 'F',
-            'Red': 'D', 'Orange': 'L', 'Green': 'B'
+            'White': 'U',
+            'Blue': 'R',
+            'Yellow': 'F',
+            'Red': 'D',
+            'Orange': 'L',
+            'Green': 'B'
         }
         
         face_order = ['U', 'R', 'F', 'D', 'L', 'B']
+        
         cube_parts = []
         
         for face in face_order:
@@ -330,19 +241,77 @@ class RubikCubeSolver:
     def get_solution(self):
         """Get optimal solution using Kociemba"""
         if not KOCIEMBA_AVAILABLE:
+            print("\n❌ Kociemba solver not available!")
             return None
         
         try:
             cube_string = self.build_kociemba_string()
+            print(f"\n📊 Cube string length: {len(cube_string)} characters")
+            
+            if len(cube_string) != 54:
+                print(f"❌ Invalid cube string length: {len(cube_string)} (should be 54)")
+                return None
+            
+            print("🔍 Solving with Kociemba algorithm...")
             solution = kociemba.solve(cube_string)
             moves = solution.split()
+            print(f"✅ Solution found! {len(moves)} moves")
+            
             return moves
+            
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"\n❌ Solver error: {e}")
             return None
     
+    def draw_solution_overlay(self, frame):
+        """Overlay solution on the camera feed without changing other elements"""
+        if not self.solution_moves:
+            return frame
+        
+        h, w = frame.shape[:2]
+        
+        # Create a semi-transparent panel for solution (on the right side)
+        overlay = frame.copy()
+        panel_x = w - 400
+        panel_y = 10
+        panel_w = 390
+        panel_h = min(300, 50 + len(self.solution_moves) // 2 * 25)
+        
+        # Draw dark background panel
+        cv2.rectangle(overlay, (panel_x, panel_y), (panel_x + panel_w, panel_y + panel_h), (0, 0, 0), -1)
+        frame = cv2.addWeighted(overlay, 0.7, frame, 0.3, 0)
+        
+        # Draw border
+        cv2.rectangle(frame, (panel_x, panel_y), (panel_x + panel_w, panel_y + panel_h), (0, 255, 0), 2)
+        
+        # Title
+        cv2.putText(frame, f"SOLUTION ({len(self.solution_moves)} MOVES)", 
+                   (panel_x + 10, panel_y + 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        
+        # Display moves in grid format (4 columns)
+        moves_per_line = 4
+        y_offset = panel_y + 60
+        
+        for i in range(0, len(self.solution_moves), moves_per_line):
+            move_group = self.solution_moves[i:i+moves_per_line]
+            move_text = "  ".join(move_group)
+            
+            cv2.putText(frame, move_text, 
+                       (panel_x + 10, y_offset),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+            
+            y_offset += 25
+            if y_offset > panel_y + panel_h - 30:
+                cv2.putText(frame, f"... +{len(self.solution_moves)-i} more", 
+                           (panel_x + 10, y_offset),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+                break
+        
+        return frame
+    
     def show_3d_cube(self):
-        """Create 3D-like cube visualization with move highlighting"""
+        """Create 3D-like cube visualization"""
         img_size = 1200
         cell_size = 100
         cube_img = np.ones((img_size, img_size, 3), dtype=np.uint8) * 240
@@ -365,15 +334,6 @@ class RubikCubeSolver:
             'B': (cell_size * 9, cell_size * 3, 'BACK (Green)'),
             'D': (cell_size * 3, cell_size * 6, 'BOTTOM (Red)')
         }
-        
-        # Determine which face to highlight
-        highlight_face = None
-        if self.solving_mode and self.current_move_index < len(self.solution_moves):
-            move = self.solution_moves[self.current_move_index]
-            move_face = move[0]
-            # Map move face to our face ID
-            face_map = {'U': 'U', 'D': 'D', 'F': 'F', 'B': 'B', 'L': 'L', 'R': 'R'}
-            highlight_face = face_map.get(move_face)
         
         for face_id, (start_x, start_y, face_name) in positions.items():
             if not self.faces[face_id]['captured']:
@@ -406,22 +366,10 @@ class RubikCubeSolver:
                         cv2.putText(cube_img, text, (text_x, text_y),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
             
-            # Highlight the face to turn
-            if highlight_face == face_id:
-                cv2.rectangle(cube_img, (start_x - 5, start_y - 5), 
-                            (start_x + cell_size*3 + 5, start_y + cell_size*3 + 5), 
-                            (0, 255, 255), 8)
-            
             label_x = start_x + 10
             label_y = start_y - 10
             cv2.putText(cube_img, face_name, (label_x, label_y),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        
-        # Add solution info if in solving mode
-        if self.solving_mode and self.solution_moves:
-            cv2.putText(cube_img, f"MOVE: {self.current_move_index + 1}/{len(self.solution_moves)}", 
-                       (img_size//2 - 100, img_size - 20),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
         cv2.putText(cube_img, "YOUR RUBIK'S CUBE", (img_size//2 - 150, 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -476,19 +424,19 @@ class RubikCubeSolver:
         print("  [V]     - View 3D cube")
         print("  [C]     - Validate cube")
         print("  [S]     - SOLVE (get solving algorithm)")
-        print("  [N]     - Next move (during solving mode)")
         print("  [Q]     - Quit")
         print("="*60)
     
     def run(self):
         print("\n" + "🎯"*35)
-        print("     RUBIK'S CUBE SOLVER")
-        print("     Step-by-Step Visual Guide")
+        print("     RUBIK'S CUBE OPTIMAL SOLVER")
+        print("     Using Kociemba's Two-Phase Algorithm")
         print("🎯"*35)
         
         if not KOCIEMBA_AVAILABLE:
             print("\n⚠️ KOCIEMBA NOT INSTALLED!")
             print("Run: pip install kociemba")
+            print("Then restart the app\n")
         
         auto_detect = True
         last_detect = 0
@@ -498,173 +446,140 @@ class RubikCubeSolver:
             if not ret:
                 break
             
-            # If in solving mode, show solution guidance
-            if self.solving_mode and self.solution_moves:
-                # Display current move guide
-                current_move = self.solution_moves[self.current_move_index] if self.current_move_index < len(self.solution_moves) else None
-                
-                if current_move:
-                    frame = self.draw_move_guide(frame, current_move)
-                
-                # Show 3D cube visualization
-                cube_vis = self.show_3d_cube()
-                cv2.imshow('Solution Guide - 3D Cube', cube_vis)
-                
-                # Display solution status
-                status_text = f"Step {self.current_move_index + 1}/{len(self.solution_moves)}: {current_move}"
-                cv2.putText(frame, status_text, (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                
-                # Progress bar
-                frame = self.draw_progress(frame)
-                
-                # Instructions for solving mode
-                cv2.putText(frame, "Press 'N' for NEXT MOVE | 'Q' to quit solving", 
-                           (10, frame.shape[0] - 20),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            else:
-                # Normal capture mode
-                current_time = time.time()
-                if auto_detect and (current_time - last_detect) > 0.3:
-                    cells, _ = self.get_cells(frame)
-                    self.current_colors = self.detect_all_cells(frame, cells)
-                    last_detect = current_time
-                
-                cells, square_coords = self.get_cells(frame)
-                display = self.draw_interface(frame, cells, square_coords)
-                frame = display
+            current_time = time.time()
+            if auto_detect and (current_time - last_detect) > 0.3:
+                cells, _ = self.get_cells(frame)
+                self.current_colors = self.detect_all_cells(frame, cells)
+                last_detect = current_time
+            
+            cells, square_coords = self.get_cells(frame)
+            display = self.draw_interface(frame, cells, square_coords)
             
             captured_count = sum(1 for f in self.faces.values() if f['captured'])
             current_face = self.faces[self.current_face]
             
-            cv2.putText(frame, f"CAPTURE: {current_face['name']} (Center: {current_face['center']})", (10, 30),
+            cv2.putText(display, f"CAPTURE: {current_face['name']} (Center: {current_face['center']})", (10, 30),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            cv2.putText(frame, f"Progress: {captured_count}/6", (10, 60),
+            cv2.putText(display, f"Progress: {captured_count}/6", (10, 60),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
             
-            if not self.solving_mode:
-                detected_center = self.current_colors[1][1]
-                center_color = (0, 255, 0) if detected_center == current_face['center'] else (0, 0, 255)
-                cv2.putText(frame, f"Center: {detected_center}", (10, 90),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, center_color, 2)
-                
-                solver_status = "Kociemba Ready" if KOCIEMBA_AVAILABLE else "Kociemba Not Installed"
-                cv2.putText(frame, solver_status, (10, 120),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255) if KOCIEMBA_AVAILABLE else (0, 0, 255), 1)
-                
-                cv2.putText(frame, "SPACE=Capture | R=Retake | S=Solve | V=View | Q=Quit",
-                           (10, frame.shape[0] - 20),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            else:
-                cv2.putText(frame, f"SOLVING MODE - Move {self.current_move_index + 1}/{len(self.solution_moves)}", 
-                           (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            detected_center = self.current_colors[1][1]
+            center_color = (0, 255, 0) if detected_center == current_face['center'] else (0, 0, 255)
+            cv2.putText(display, f"Center: {detected_center}", (10, 90),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, center_color, 2)
             
-            cv2.imshow('Rubik\'s Cube Solver', frame)
+            solver_status = "Kociemba Ready" if KOCIEMBA_AVAILABLE else "Kociemba Not Installed"
+            cv2.putText(display, solver_status, (10, 120),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255) if KOCIEMBA_AVAILABLE else (0, 0, 255), 1)
+            
+            cv2.putText(display, "SPACE=Capture | R=Retake | S=Solve | V=View | Q=Quit",
+                       (10, display.shape[0] - 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            # Overlay solution on the camera feed (doesn't change anything else)
+            display = self.draw_solution_overlay(display)
+            
+            cv2.imshow('Rubik\'s Cube Optimal Solver', display)
             
             key = cv2.waitKey(1) & 0xFF
             
             if key == ord('q') or key == ord('Q'):
-                if self.solving_mode:
-                    self.solving_mode = False
-                    self.solution_moves = []
-                    self.current_move_index = 0
-                    cv2.destroyWindow('Solution Guide - 3D Cube')
-                    print("\n✅ Exited solving mode")
-                else:
-                    break
+                break
+            elif key == ord(' '):
+                if captured_count < 6:
+                    detected_center = self.current_colors[1][1]
+                    expected_center = current_face['center']
                     
-            elif key == ord('n') or key == ord('N'):  # Next move in solving mode
-                if self.solving_mode and self.solution_moves:
-                    if self.current_move_index < len(self.solution_moves) - 1:
-                        self.current_move_index += 1
-                        print(f"\n👉 Next move: {self.solution_moves[self.current_move_index]}")
-                        print(f"   Progress: {self.current_move_index + 1}/{len(self.solution_moves)}")
+                    if detected_center == expected_center:
+                        print(f"\n✅ Captured {current_face['name']}")
+                        self.faces[self.current_face]['colors'] = [row[:] for row in self.current_colors]
+                        self.faces[self.current_face]['captured'] = True
+                        
+                        if self.face_index < len(self.face_order) - 1:
+                            self.face_index += 1
+                            self.current_face = self.face_order[self.face_index]
+                            self.print_instructions()
+                        else:
+                            print("\n" + "🎉"*35)
+                            print("ALL FACES CAPTURED! Press 'S' for OPTIMAL solution")
+                            print("🎉"*35)
                     else:
-                        print("\n🎉 CONGRATULATIONS! CUBE SHOULD BE SOLVED! 🎉")
-                        print("   Press Q to exit solving mode")
-                        self.solving_mode = False
-                        self.solution_moves = []
-                        self.current_move_index = 0
-                        cv2.destroyWindow('Solution Guide - 3D Cube')
+                        print(f"\n❌ Wrong face! Expected {expected_center}, got {detected_center}")
+                else:
+                    print("\n✅ All faces captured! Press 'S'")
+                    
+            elif key == ord('r') or key == ord('R'):
+                if captured_count < 6:
+                    print(f"\n🔄 Retaking {current_face['name']}")
+                    self.faces[self.current_face]['colors'] = [['?' for _ in range(3)] for _ in range(3)]
+                    self.faces[self.current_face]['captured'] = False
+                    self.solution_moves = []  # Clear solution when retaking
+                    self.print_instructions()
+                else:
+                    print("\n🔄 Resetting all faces...")
+                    for face_id in self.faces:
+                        self.faces[face_id]['colors'] = [['?' for _ in range(3)] for _ in range(3)]
+                        self.faces[face_id]['captured'] = False
+                    self.face_index = 0
+                    self.current_face = 'U'
+                    self.solution_moves = []  # Clear solution
+                    self.print_instructions()
+                    
+            elif key == ord('v') or key == ord('V'):
+                cube_3d = self.show_3d_cube()
+                cv2.imshow('Your Rubik\'s Cube', cube_3d)
+                cv2.waitKey(0)
+                cv2.destroyWindow('Your Rubik\'s Cube')
             
-            elif not self.solving_mode:
-                if key == ord(' '):
-                    if captured_count < 6:
-                        detected_center = self.current_colors[1][1]
-                        expected_center = current_face['center']
-                        
-                        if detected_center == expected_center:
-                            print(f"\n✅ Captured {current_face['name']}")
-                            self.faces[self.current_face]['colors'] = [row[:] for row in self.current_colors]
-                            self.faces[self.current_face]['captured'] = True
-                            
-                            if self.face_index < len(self.face_order) - 1:
-                                self.face_index += 1
-                                self.current_face = self.face_order[self.face_index]
-                                self.print_instructions()
-                            else:
-                                print("\n" + "🎉"*35)
-                                print("ALL FACES CAPTURED! Press 'S' for solution")
-                                print("🎉"*35)
-                        else:
-                            print(f"\n❌ Wrong face! Expected {expected_center}, got {detected_center}")
+            elif key == ord('c') or key == ord('C'):
+                self.validate_cube()
+            
+            elif key == ord('s') or key == ord('S'):  # SOLVE
+                if captured_count == 6:
+                    if self.validate_cube():
+                        print("\n🔧 Generating OPTIMAL solution...")
+                        moves = self.get_solution()
+                        if moves:
+                            self.solution_moves = moves
+                            self.display_solution(moves)
                     else:
-                        print("\n✅ All faces captured! Press 'S' for solution")
-                        
-                elif key == ord('r') or key == ord('R'):
-                    if captured_count < 6:
-                        print(f"\n🔄 Retaking {current_face['name']}")
-                        self.faces[self.current_face]['colors'] = [['?' for _ in range(3)] for _ in range(3)]
-                        self.faces[self.current_face]['captured'] = False
-                        self.print_instructions()
-                    else:
-                        print("\n🔄 Resetting all faces...")
-                        for face_id in self.faces:
-                            self.faces[face_id]['colors'] = [['?' for _ in range(3)] for _ in range(3)]
-                            self.faces[face_id]['captured'] = False
-                        self.face_index = 0
-                        self.current_face = 'U'
-                        self.print_instructions()
-                        
-                elif key == ord('v') or key == ord('V'):
-                    cube_3d = self.show_3d_cube()
-                    cv2.imshow('Your 3D Rubik\'s Cube', cube_3d)
-                    cv2.waitKey(0)
-                    cv2.destroyWindow('Your 3D Rubik\'s Cube')
-                
-                elif key == ord('c') or key == ord('C'):
-                    self.validate_cube()
-                
-                elif key == ord('s') or key == ord('S'):  # SOLVE
-                    if captured_count == 6:
-                        if self.validate_cube():
-                            print("\n🔧 Generating OPTIMAL solution...")
-                            moves = self.get_solution()
-                            if moves:
-                                self.solution_moves = moves
-                                self.current_move_index = 0
-                                self.solving_mode = True
-                                print(f"\n✅ Solution generated! {len(moves)} moves")
-                                print(f"👉 First move: {moves[0]}")
-                                print("\n📖 HOW TO USE:")
-                                print("   1. Look at the highlighted face on the 3D cube")
-                                print("   2. Follow the arrow direction shown on screen")
-                                print("   3. Press 'N' after completing each move")
-                                print("   4. Keep going until all moves are done!\n")
-                                
-                                # Show 3D cube window
-                                cube_vis = self.show_3d_cube()
-                                cv2.imshow('Solution Guide - 3D Cube', cube_vis)
-                            else:
-                                print("\n❌ Could not generate solution")
-                        else:
-                            print("\n⚠️ Invalid cube state. Press R to recapture")
-                    else:
-                        print(f"\n⚠️ Need {6-captured_count} more faces")
+                        print("\n⚠️ Invalid cube state. Press R to recapture")
+                else:
+                    print(f"\n⚠️ Need {6-captured_count} more faces")
         
         self.cap.release()
         cv2.destroyAllWindows()
         print("\n👋 Goodbye!")
+    
+    def display_solution(self, moves):
+        """Display the solution"""
+        if not moves:
+            print("\n❌ No solution generated")
+            return
+        
+        print("\n" + "="*70)
+        print(" " * 25 + "SOLVING ALGORITHM")
+        print("="*70)
+        print(f"\n📊 TOTAL MOVES: {len(moves)}\n")
+        
+        # Display moves in groups of 10
+        print("🔧 MOVE SEQUENCE:")
+        for i in range(0, len(moves), 10):
+            group = moves[i:i+10]
+            print("   " + " ".join(group))
+        
+        print("\n" + "-"*70)
+        print("📖 MOVE NOTATION:")
+        print("   R  = Right face clockwise    R' = Right face counter-clockwise")
+        print("   L  = Left face clockwise     L' = Left face counter-clockwise")
+        print("   U  = Up face clockwise       U' = Up face counter-clockwise")
+        print("   D  = Down face clockwise     D' = Down face counter-clockwise")
+        print("   F  = Front face clockwise    F' = Front face counter-clockwise")
+        print("   B  = Back face clockwise     B' = Back face counter-clockwise")
+        print("   2  = 180 degree turn (e.g., R2)")
+        print("="*70)
+        
+        print("\n🎯 SOLUTION WILL APPEAR ON THE RIGHT SIDE OF CAMERA FEED!")
 
 if __name__ == "__main__":
     try:
